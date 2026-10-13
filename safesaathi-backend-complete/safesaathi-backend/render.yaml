@@ -1,0 +1,23 @@
+# Render Blueprint (tumhare GitHub repo ke hisaab se: files safesaathi-backend/safesaathi-backend/ folder mein hain).
+# Agar tum files repo ke top par rakhti ho to neeche wali "rootDir" line hata dena.
+services:
+  - type: web
+    name: safesaathi-backend
+    runtime: docker
+    plan: free
+    rootDir: safesaathi-backend/safesaathi-backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: safesaathi-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_KEY
+        generateValue: true
+databases:
+  - name: safesaathi-db
+    plan: free
+    databaseName: safesaathi
+    user: safeuser

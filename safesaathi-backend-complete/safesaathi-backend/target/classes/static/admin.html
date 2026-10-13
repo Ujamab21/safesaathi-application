@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>SafeSaathi Admin</title>
+<style>
+  :root { --bg:#f4f7f5; --card:#fff; --ink:#18322a; --mute:#6b7f73; --line:#dbe5df; --accent:#1f6b52; --bad:#b3261e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#101a16; --card:#18241f; --ink:#e6f0ea; --mute:#93a79c; --line:#2a3b33; --accent:#5fc9a0; --bad:#ff8a80; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 16px; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  h1 { font-size:20px; margin:0; }
+  main { padding:0 16px 32px; max-width:1100px; margin:0 auto; }
+  .login { max-width:360px; margin:60px auto; background:var(--card); padding:20px; border-radius:12px; border:1px solid var(--line); }
+  input, button { font:inherit; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); }
+  input { width:100%; margin:10px 0; }
+  button { cursor:pointer; background:var(--accent); color:#fff; border:0; }
+  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
+  .err { color:var(--bad); min-height:1.2em; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:8px 0 18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .card b { font-size:26px; display:block; }
+  .card span { color:var(--mute); font-size:13px; }
+  h2 { font-size:16px; margin:20px 0 8px; }
+  .wrap { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:12px; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--mute); font-weight:600; }
+  td.wrapcell { white-space:normal; min-width:160px; }
+  .tag { padding:2px 8px; border-radius:999px; background:var(--line); font-size:12px; }
+  .tag.bad { background:var(--bad); color:#fff; }
+  .muted { color:var(--mute); font-size:13px; }
+</style>
+</head>
+<body>
+<div id="loginBox" class="login">
+  <h1>SafeSaathi Admin</h1>
+  <p class="muted">Render mein ADMIN_KEY jo hai wo yahan daalo.</p>
+  <input id="key" type="password" placeholder="Admin key" autocomplete="off">
+  <button id="go">Open</button>
+  <p id="loginErr" class="err"></p>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>SafeSaathi Admin</h1>
+    <div><span id="updated" class="muted"></span> <button class="ghost" id="refresh">Refresh</button> <button class="ghost" id="logout">Logout</button></div>
+  </header>
+  <main>
+    <div class="cards" id="cards"></div>
+    <h2>Recent activity (latest 200)</h2>
+    <div class="wrap"><table id="events"></table></div>
+    <h2>Registered users (latest 200)</h2>
+    <div class="wrap"><table id="users"></table></div>
+    <p class="muted">Time India (IST) mein dikhaya gaya hai. Page har 20 second mein khud refresh hota hai.</p>
+  </main>
+</div>
+
+<script>
+(function () {
+  var keyInput = document.getElementById('key');
+  var loginBox = document.getElementById('loginBox');
+  var appBox = document.getElementById('app');
+  var timer = null;
+
+  function fmt(s) {
+    if (!s) return '';
+    var d = new Date(String(s).substring(0, 19) + 'Z');
+    if (isNaN(d.getTime())) return String(s);
+    return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function td(text, cls) {
+    var c = document.createElement('td');
+    if (cls) c.className = cls;
+    c.textContent = text == null ? '' : String(text);   // textContent: user ka likha text safe rehta hai
+    return c;
+  }
+
+  function fillTable(el, headers, rows) {
+    el.textContent = '';
+    var thead = document.createElement('thead');
+    var hr = document.createElement('tr');
+    headers.forEach(function (h) { var th = document.createElement('th'); th.textContent = h; hr.appendChild(th); });
+    thead.appendChild(hr);
+    el.appendChild(thead);
+    var tb = document.createElement('tbody');
+    rows.forEach(function (cells) {
+      var tr = document.createElement('tr');
+      cells.forEach(function (c) { tr.appendChild(c); });
+      tb.appendChild(tr);
+    });
+    el.appendChild(tb);
+  }
+
+  function render(d) {
+    var cards = document.getElementById('cards');
+    cards.textContent = '';
+    [['Total users', d.totalUsers], ['New users today', d.registrationsToday], ['Logins today', d.loginsToday],
+     ['Failed logins today', d.failedLoginsToday], ['SOS today', d.sosToday], ['Total events', d.totalEvents]]
+      .forEach(function (x) {
+        var c = document.createElement('div'); c.className = 'card';
+        var b = document.createElement('b'); b.textContent = x[1];
+        var s = document.createElement('span'); s.textContent = x[0];
+        c.appendChild(b); c.appendChild(s); cards.appendChild(c);
+      });
+
+    fillTable(document.getElementById('events'), ['Time', 'Type', 'User', 'Details'],
+      (d.events || []).map(function (e) {
+        var t = document.createElement('td');
+        var tag = document.createElement('span');
+        tag.className = 'tag' + (e.type === 'LOGIN_FAILED' || e.type === 'SOS' ? ' bad' : '');
+        tag.textContent = e.type;
+        t.appendChild(tag);
+        return [td(fmt(e.createdAt)), t, td(e.email), td(e.details, 'wrapcell')];
+      }));
+
+    fillTable(document.getElementById('users'), ['ID', 'Name', 'Email', 'Phone', 'Role', 'Joined'],
+      (d.users || []).map(function (u) {
+        return [td(u.id), td(u.name), td(u.email), td(u.phone), td(u.role), td(fmt(u.createdAt))];
+      }));
+
+    document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-IN');
+  }
+
+  function load(showErr) {
+    var key = sessionStorage.getItem('adminKey');
+    if (!key) return;
+    fetch('/api/admin/summary', { headers: { 'X-Admin-Key': key } })
+      .then(function (r) {
+        if (r.status === 401) throw new Error('Galat key (ya server par ADMIN_KEY set nahi hai).');
+        if (!r.ok) throw new Error('Server error ' + r.status);
+        return r.json();
+      })
+      .then(function (d) {
+        loginBox.hidden = true; appBox.hidden = false;
+        render(d);
+        if (!timer) timer = setInterval(function () { load(false); }, 20000);
+      })
+      .catch(function (e) {
+        if (showErr) {
+          document.getElementById('loginErr').textContent = e.message + ' Server so raha ho to 1 minute baad dobara try karo.';
+          sessionStorage.removeItem('adminKey');
+        }
+      });
+  }
+
+  document.getElementById('go').onclick = function () {
+    sessionStorage.setItem('adminKey', keyInput.value.trim());
+    document.getElementById('loginErr').textContent = 'Loading...';
+    load(true);
+  };
+  keyInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') document.getElementById('go').click(); });
+  document.getElementById('refresh').onclick = function () { load(false); };
+  document.getElementById('logout').onclick = function () {
+    sessionStorage.removeItem('adminKey'); clearInterval(timer); timer = null;
+    appBox.hidden = true; loginBox.hidden = false; keyInput.value = '';
+    document.getElementById('loginErr').textContent = '';
+  };
+  load(true);
+})();
+</script>
+</body>
+</html>

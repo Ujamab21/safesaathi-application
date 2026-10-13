@@ -1,0 +1,5 @@
+# Caddy khud HTTPS certificate (Let's Encrypt) le leta hai.
+# DOMAIN .env file se aata hai.
+{$DOMAIN} {
+    reverse_proxy backend:8080
+}
